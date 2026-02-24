@@ -3,28 +3,19 @@ import json
 from pptx import Presentation
 from io import BytesIO
 
-st.title("PPT Generator")
-st.caption("HTMLツールからJSONを貼り付けてください")
+def check_password():
+    if st.session_state.get("password_correct"):
+        return True
+    pwd = st.text_input("Password", type="password", key="pwd_input")
+    if pwd:
+        if pwd == st.secrets["password"]:
+            st.session_state["password_correct"] = True
+            return True
+        else:
+            st.error("パスワードが違います")
+    return False
 
-json_input = st.text_area("JSON Paste Area", height=250)
-
-if st.button("パワーポイントを生成"):
-    if json_input:
-        try:
-            data = json.loads(json_input)
-            
-            prs = Presentation()
-            slide = prs.slides.add_slide(prs.slide_layouts[0])
-            slide.shapes.title.text = "Creative Brief"
-            
-            ppt_out = BytesIO()
-            prs.save(ppt_out)
-            ppt_out.seek(0)
-            st.download_button(
-                label="📥 PPTをダウンロード",
-                data=ppt_out,
-                file_name="brief.pptx",
-                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-            )
-        except Exception as e:
-            st.error(f"JSON形式を確認してください: {e}")
+if check_password():
+    st.title("PPT Generator")
+    st.caption("HTMLツールからJSONを貼り付けてください")
+    # ... 以下同じ
