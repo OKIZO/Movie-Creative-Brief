@@ -20,29 +20,34 @@ def check_password():
             st.error("パスワードが違います")
     return False
 
-# --- テキスト置換関数 ---
+# --- テキスト置換用サブ関数 ---
+def replace_text_in_text_frame(text_frame, replacements):
+    """テキストフレーム内の段落を巡回し、置換を実行する"""
+    for paragraph in text_frame.paragraphs:
+        if any(key in paragraph.text for key in replacements.keys()):
+            full_text = paragraph.text
+            for key, val in replacements.items():
+                str_val = str(val) if val is not None else ""
+                full_text = full_text.replace(key, str_val)
+            paragraph.text = full_text
+
+# --- メインのテキスト置換関数 ---
 def replace_text_in_presentation(prs, replacements):
     """
     スライド内の全シェイプを巡回し、指定された辞書(replacements)に基づいて
-    {{タグ}} を JSON の値に置換します。
+    {{タグ}} を JSON の値に置換します。表（テーブル）の中身も対応。
     """
     for slide in prs.slides:
         for shape in slide.shapes:
-            if not shape.has_text_frame:
-                continue
+            # 1. 通常のテキストボックスの場合
+            if shape.has_text_frame:
+                replace_text_in_text_frame(shape.text_frame, replacements)
             
-            for paragraph in shape.text_frame.paragraphs:
-                # 段落内に置換対象のキーが含まれているかチェック
-                if any(key in paragraph.text for key in replacements.keys()):
-                    # パワポの仕様上、{{タグ}}が複数のrunに分割されることがあるため、
-                    # 段落全体のテキストを一度取得して置換し、それを再セットする手法をとります
-                    full_text = paragraph.text
-                    for key, val in replacements.items():
-                        # 値がリストなどの場合は文字列に変換、Noneの場合は空文字にする
-                        str_val = str(val) if val is not None else ""
-                        full_text = full_text.replace(key, str_val)
-                    
-                    paragraph.text = full_text
+            # 2. 表（テーブル）の場合
+            if shape.has_table:
+                for row in shape.table.rows:
+                    for cell in row.cells:
+                        replace_text_in_text_frame(cell.text_frame, replacements)
 
 # --- メイン画面 ---
 if check_password():
@@ -56,7 +61,7 @@ if check_password():
             try:
                 data = json.loads(json_input)
                 
-                # 1. テンプレートの読み込み（同じディレクトリに template.pptx がある前提）
+                # 1. テンプレートの読み込み
                 prs = Presentation("template.pptx")
                 
                 # 2. JSONデータとテンプレートの {{タグ}} を紐づける辞書を作成
@@ -72,8 +77,8 @@ if check_password():
                     "{{As_is}}": data.get("value", {}).get("behavior_change", {}).get("as_is", ""),
                     "{{To_be}}": data.get("value", {}).get("behavior_change", {}).get("to_be", ""),
                     
-                    # リスト形式のものは最初の要素を取得（エラー回避のためチェック）
-                    "{{Benefit}}": data.get("value", {}).get("benefit", [""])[0],
+                    # リスト形式のものは最初の要素を取得（空の場合は空文字）
+                    "{{Benefit}}": data.get("value", {}).get("benefit", [""])[0] if data.get("value", {}).get("benefit") else "",
                     
                     "{{社会背景}}": data.get("context", {}).get("social", {}).get("text", ""),
                     "{{患者インサイト}}": data.get("context", {}).get("patient", {}).get("text", ""),
