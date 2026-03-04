@@ -10,7 +10,6 @@ def check_password():
     if st.session_state["password_correct"]:
         return True
 
-    # 埋め込み表示（iframe）でも見やすいシンプルな画面
     st.write("### 認証が必要です")
     pwd = st.text_input("Password", type="password")
     if st.button("Login"):
@@ -20,6 +19,30 @@ def check_password():
         else:
             st.error("パスワードが違います")
     return False
+
+# --- テキスト置換関数 ---
+def replace_text_in_presentation(prs, replacements):
+    """
+    スライド内の全シェイプを巡回し、指定された辞書(replacements)に基づいて
+    {{タグ}} を JSON の値に置換します。
+    """
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if not shape.has_text_frame:
+                continue
+            
+            for paragraph in shape.text_frame.paragraphs:
+                # 段落内に置換対象のキーが含まれているかチェック
+                if any(key in paragraph.text for key in replacements.keys()):
+                    # パワポの仕様上、{{タグ}}が複数のrunに分割されることがあるため、
+                    # 段落全体のテキストを一度取得して置換し、それを再セットする手法をとります
+                    full_text = paragraph.text
+                    for key, val in replacements.items():
+                        # 値がリストなどの場合は文字列に変換、Noneの場合は空文字にする
+                        str_val = str(val) if val is not None else ""
+                        full_text = full_text.replace(key, str_val)
+                    
+                    paragraph.text = full_text
 
 # --- メイン画面 ---
 if check_password():
@@ -33,23 +56,74 @@ if check_password():
             try:
                 data = json.loads(json_input)
                 
-                # パワポ作成
-                prs = Presentation()
-                slide = prs.slides.add_slide(prs.slide_layouts[0])
-                slide.shapes.title.text = "Creative Brief"
+                # 1. テンプレートの読み込み（同じディレクトリに template.pptx がある前提）
+                prs = Presentation("template.pptx")
                 
-                # サンプル：JSONの「プロジェクト名」などを反映
-                # data['projectName'] など、HTMLツールの出力に合わせて調整可能
+                # 2. JSONデータとテンプレートの {{タグ}} を紐づける辞書を作成
+                replacements = {
+                    "{{映像種別}}": data.get("brief", {}).get("item_name", ""),
+                    "{{目的}}": data.get("brief", {}).get("purpose", ""),
+                    "{{チャネル}}": data.get("brief", {}).get("channel", ""),
+                    "{{対象}}": data.get("brief", {}).get("target", ""),
+                    "{{尺}}": data.get("brief", {}).get("duration", ""),
+                    
+                    "{{Vision}}": data.get("ideology", {}).get("vision", ""),
+                    
+                    "{{As_is}}": data.get("value", {}).get("behavior_change", {}).get("as_is", ""),
+                    "{{To_be}}": data.get("value", {}).get("behavior_change", {}).get("to_be", ""),
+                    
+                    # リスト形式のものは最初の要素を取得（エラー回避のためチェック）
+                    "{{Benefit}}": data.get("value", {}).get("benefit", [""])[0],
+                    
+                    "{{社会背景}}": data.get("context", {}).get("social", {}).get("text", ""),
+                    "{{患者インサイト}}": data.get("context", {}).get("patient", {}).get("text", ""),
+                    "{{医師インサイト}}": data.get("context", {}).get("doctor", {}).get("text", ""),
+                }
+
+                # テーマ案A, B, C の動的マッピング
+                axes = data.get("proposed_axes", [])
+                if len(axes) > 0:
+                    replacements.update({
+                        "{{軸案A_軸名}}": axes[0].get("name", ""),
+                        "{{軸案A_軸カテゴリ}}": axes[0].get("category", ""),
+                        "{{軸案A_主語}}": axes[0].get("subject", ""),
+                        "{{軸案A_主役テーマ}}": axes[0].get("theme", ""),
+                        "{{軸案A_動画方向性}}": axes[0].get("direction", ""),
+                        "{{軸案A_適した型}}": axes[0].get("type", ""),
+                    })
+                if len(axes) > 1:
+                    replacements.update({
+                        "{{軸案B_軸名}}": axes[1].get("name", ""),
+                        "{{軸案B_軸カテゴリ}}": axes[1].get("category", ""),
+                        "{{軸案B_主語}}": axes[1].get("subject", ""),
+                        "{{軸案B_主役テーマ}}": axes[1].get("theme", ""),
+                        "{{軸案B_動画方向性}}": axes[1].get("direction", ""),
+                        "{{軸案B_適した型}}": axes[1].get("type", ""),
+                    })
+                if len(axes) > 2:
+                    replacements.update({
+                        "{{軸案C_軸名}}": axes[2].get("name", ""),
+                        "{{軸案C_軸カテゴリ}}": axes[2].get("category", ""),
+                        "{{軸案C_主語}}": axes[2].get("subject", ""),
+                        "{{軸案C_主役テーマ}}": axes[2].get("theme", ""),
+                        "{{軸案C_動画方向性}}": axes[2].get("direction", ""),
+                        "{{軸案C_適した型}}": axes[2].get("type", ""),
+                    })
+
+                # 3. テキストの置換処理を実行
+                replace_text_in_presentation(prs, replacements)
                 
+                # 4. メモリ上に保存してダウンロード可能にする
                 ppt_out = BytesIO()
                 prs.save(ppt_out)
                 ppt_out.seek(0)
 
+                st.success("スライドの生成が完了しました！")
                 st.download_button(
                     label="📥 PPTをダウンロード",
                     data=ppt_out,
-                    file_name="brief.pptx",
+                    file_name="generated_brief.pptx",
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 )
             except Exception as e:
-                st.error(f"JSON形式を確認してください: {e}")
+                st.error(f"エラーが発生しました: {e}")
